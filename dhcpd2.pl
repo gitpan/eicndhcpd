@@ -1,6 +1,6 @@
 #!/perl/bin
 # -----------------------------------------------------------------------------
-# EICNDHCPD v1.0 for NT4 
+# EICNDHCPD v1.1 for NT4 
 # EICNDHCPD Copyright (c)1998 EICN & Nils Reichen <reichen@eicn.ch> 
 # All rights reserved.
 # http://neli00.eicn.etna.ch/~reichen/eicndhcpd.htm
@@ -21,14 +21,15 @@
 # Use under GNU General Public License
 # Details can be found at:http://www.gnu.org/copyleft/gpl.html
 #
-#$Header: dhcpd2.pl,v 1.0 1998/6/18
+#$Header: dhcpd2.pl,v 1.1 1998/10/7
 # -----------------------------------------------------------------------------
 # v0.9b Created: 19.May.1998   - Created by Nils Reichen <reichen@eicn.ch>
 # v0.901b Revised: 26.May.1998 - Renew bug solved, and optimized code
 # v0.902b Revised: 04.Jun.1998 - EventLog and Service NT
 # v1.0 Revised: 18.Jun.1998 - Fix some little bugs (inet_aton,...)
-$ver      = "v1.0";
-$ver_date = "18.Jun.1998";
+# v1.1 Revised: 07.Oct.1998 - Fix \x0a bug
+$ver      = "v1.1";
+$ver_date = "07.Oct.1998";
 # -----------------------------------------------------------------------------
 
 use Dhcpd;           # Dhcpd module: define some constant for EICN DHCPD
@@ -168,7 +169,7 @@ if(($server_ip eq "")||(inet_ntoa($server_ip)=~/255/)||
     
 ###############################################################################
 #
-# Check size of dhcpd.log
+# Check size of dhcpd.log & debug.log
 #
 my $size=-s ".\\log\\dhcpd.log";  # get the size of dhcpd.log in byte
 &Log_backup if($size>=$log_size); # backup dhcpd.log to .bak
@@ -321,30 +322,31 @@ while(1){
     
     # 'op','htype','hlen' and magic cookie: allready tested in dhcpd.pl
     # 'hops','secs','yiaddr' and 'siaddr' ignored: don't needed
-    my ($hlen)=($frame=~ /^..(.)/);         # 'hlen' field, need for $chaddr
-    ($xid)=($frame=~ /^....(....)/);        # 'xid' field
-    ($flags)=($frame=~ /^.{10}(..)/);       # 'flags' field
-    ($ciaddr)=($frame=~ /^.{12}(....)/);    # 'ciaddr' field
-    ($giaddr)=($frame=~ /^.{24}(....)/);    # 'giaddr' field
-    ($p_chaddr)=($frame=~ /^.{28}(.{16})/); # 'chaddr' field (16 bytes)
+    my ($hlen)=($frame=~ /^..(.)/s);         # 'hlen' field, need for $chaddr
+    ($xid)=($frame=~ /^....(....)/s);        # 'xid' field
+    ($flags)=($frame=~ /^.{10}(..)/s);       # 'flags' field
+    ($ciaddr)=($frame=~ /^.{12}(....)/s);    # 'ciaddr' field
+    ($giaddr)=($frame=~ /^.{24}(....)/s);    # 'giaddr' field
+    ($p_chaddr)=($frame=~ /^.{28}(.{16})/s); # 'chaddr' field (16 bytes)
     $hlend=hex(unpack("H2",$hlen));         # hardware address length in dec.
-    ($chaddr)=($p_chaddr=~ /^(.{$hlend})/); # only 'hlen' length of MAC addr.
+    ($chaddr)=($p_chaddr=~ /^(.{$hlend})/s); # only 'hlen' length of MAC addr.
     my $chaddr_c=unpack("H12",$chaddr);  # $chaddr in ASCII (0000f8308010 form)
     # $chaddr_txt: ASCII form of $chaddr with "-" (00-00-f8-30-80-10 form):
-    $chaddr_txt=pack "a2aa2aa2aa2aa2aa2", $chaddr_c=~ /^(..)/,"-",
-                $chaddr_c=~ /^..(..)/,"-",$chaddr_c=~ /^.{4}(..)/,"-",
-                $chaddr_c=~ /^.{6}(..)/,"-",$chaddr_c=~ /^.{8}(..)/,"-",
-                $chaddr_c=~ /^.{10}(..)/;       
+    $chaddr_txt=pack "a2aa2aa2aa2aa2aa2", $chaddr_c=~ /^(..)/s,"-",
+                $chaddr_c=~ /^..(..)/s,"-",$chaddr_c=~ /^.{4}(..)/s,"-",
+                $chaddr_c=~ /^.{6}(..)/s,"-",$chaddr_c=~ /^.{8}(..)/s,"-",
+                $chaddr_c=~ /^.{10}(..)/s;       
     
     $i=240;    # set postion at the begining of 'option' field
+    
     while($option ne "\xff")
     { 
-	($option)=($frame=~ /^.{$i}(.)/);     # option number
+	($option)=($frame=~ /^.{$i}(.)/s);    # option number
 	$i++;
 	next if($option eq "\x00");           # next if it's a 'pad' option
 	$o_len=&hex2dec($i,$frame);           # lenth of data (in decimal)
 	$i++;
-	($o_contens)=($frame=~ /^.{$i}(.{$o_len})/); # option data
+	($o_contens)=($frame=~ /^.{$i}(.{$o_len})/s); # option data
 	$i=$i+$o_len;
 	
 	if($option eq $O_DHCP_MSG_TYPE){
@@ -359,8 +361,8 @@ while(1){
 	}
 	elsif($option eq $O_HOST_NAME){
 	    $client_hostname=$o_contens;
-	    if($client_hostname=~ /\x00$/){ # if containing a trailing NULL
-		chop($client_hostname);     # remove this NULL character
+	    if($client_hostname=~ /\x00$/s){ # if containing a trailing NULL
+		chop($client_hostname);      # remove this NULL character
 	    }
 	}
 	elsif($option eq $O_PARAMETER_LIST){
@@ -389,11 +391,11 @@ while(1){
     } # End of While
     
     sub hex2dec
-    {   # hex2dec($pos,$frame) Extract /^.{$pos}(.)/ from $frame 
+    {   # hex2dec($pos,$frame) Extract /^.{$pos}(.)/s from $frame 
 	# and convert to decimal
 	my($i,$frame)=@_;
 	my($o_lenh,$o_lend); # option length in hex. and dec.
-	($o_lenh)=($frame=~ /^.{$i}(.)/);
+	($o_lenh)=($frame=~ /^.{$i}(.)/s);
 	$o_lend=hex(unpack("H2",$o_lenh));
 	return($o_lend);
     }
@@ -677,20 +679,20 @@ sub R_inform
 
 	# creating the DHCPACK frame:
 	my $ack="$BOOTREPLY$HTYPE_ETHER$HLEN_ETHER\x00$xid\x00\x00$flags\x00\x00\x00\x00\x00\x00\x00\x00$server_ip$giaddr$p_chaddr$SNAME$FILE$MAGIC_COOKIE$O_DHCP_MSG_TYPE\x01$DHCPACK$O_DHCP_SERVER_ID\x04$server_ip";
-	for($i=0;$requested_param=~/^.{$i}./;$i++){
-	    if($requested_param=~/^.{$i}\x01/ and $netmask){
+	for($i=0;$requested_param=~/^.{$i}./s;$i++){
+	    if($requested_param=~/^.{$i}\x01/s and $netmask){
 		$ack=$ack."$O_SUBNET_MASK\x04$netmask";
 	    }
-	    elsif($requested_param=~/^.{$i}\x03/ and $def_gw){
+	    elsif($requested_param=~/^.{$i}\x03/s and $def_gw){
 		$ack=$ack."$O_ROUTER$def_gw_len$def_gw";
 	    }
-	    elsif($requested_param=~/^.{$i}\x0f/ and $domain_name){
+	    elsif($requested_param=~/^.{$i}\x0f/s and $domain_name){
 		$ack=$ack."$O_DOMAIN_NAME$domain_name_len$domain_name";
 	    }
-	    elsif($requested_param=~/^.{$i}\x06/ and $dns_server){
+	    elsif($requested_param=~/^.{$i}\x06/s and $dns_server){
 		$ack=$ack."$O_DNS_SERVER$dns_server_len$dns_server";
 	    }
-	    elsif($requested_param=~/^.{$i}\x2c/ and $nbns){
+	    elsif($requested_param=~/^.{$i}\x2c/s and $nbns){
 		$ack=$ack."$O_NETBIOS_NAME_SERVER$nbns_len$nbns$O_NETBIOS_NODE_TYPE\x01$nbnode";
 	    }
 	}
@@ -736,7 +738,7 @@ sub Mac
     }
     while(<NETDB>){         # get a ligne in netdata.dat
 	next if($_=~ /^\#/); # next if it's a coment ligne
-	($macaddr)=($_=~ /MAC:(..-..-..-..-..-..)/); # extract the MAC address
+	($macaddr)=($_=~ /MAC:(..-..-..-..-..-..)/s); # extract the MAC address
 	$macaddr=~ tr/A-Z/a-z/;      # transform MAJ. to min.
 	if($chaddr_txt eq $macaddr){
 	    # MAC address is valid, return 1 and the ligne of netdata.dat:
@@ -815,19 +817,19 @@ sub Ip
 	if($msg_type==3){ # DHCPREQUEST with bad IP address request
 	    if($ciaddr eq "\x00\x00\x00\x00"){ # INIT-REBOOT state
 		print LOG localtime()=~ /^\S{3}\s(\S+\s+\S+\s\S+)/,
-		      " Unauthorized IP address request for $requested_ip,";
+		      " Unauthorized IP address request for $requested_ip\n";
 	    }
 	    else{ # RENEWING or REBINDING state
 		print LOG localtime()=~ /^\S{3}\s(\S+\s+\S+\s\S+)/,
 		      " WARNING! Invalid IP address request for ",
 		      inet_ntoa($ciaddr),
-		      " on Renewing or\n       Rebinding state";
+		      " on\n      Renewing or Rebinding state from $chaddr_txt\n";
 	    }
 	}
 	elsif($msg_type==1){ # DHCPDISCOVER with bad IP address request
 	    print LOG localtime()=~ /^\S{3}\s(\S+\s+\S+\s\S+)/,
-	          " DHCPDISCOVER with an invalid IP address request (",
-	          $requested_ip,")\n";
+	          " DHCPDISCOVER with an invalid IP address request\n      (",
+	          $requested_ip,") from $chaddr_txt\n";
 	}
 	elsif($msg_type==8){ # DHCPINFORM with bad IP address
 	    print LOG localtime()=~ /^\S{3}\s(\S+\s+\S+\s\S+)/," $chaddr_txt";
@@ -948,20 +950,20 @@ sub Send_ack
 
     # creating the DHCPACK frame:
     my $ack="$BOOTREPLY$HTYPE_ETHER$HLEN_ETHER\x00$xid\x00\x00$flags\x00\x00\x00\x00$p_requested_ip$server_ip$giaddr$p_chaddr$SNAME$FILE$MAGIC_COOKIE$O_DHCP_MSG_TYPE\x01$DHCPACK$O_RENEWAL_TIME\x04$t1$O_REBINDING_TIME\x04$t2$O_ADDRESS_TIME\x04$t3$O_DHCP_SERVER_ID\x04$server_ip";
-    for($i=0;$requested_param=~/^.{$i}./;$i++){
-	if($requested_param=~/^.{$i}\x01/ and $netmask){
+    for($i=0;$requested_param=~/^.{$i}./s;$i++){
+	if($requested_param=~/^.{$i}\x01/s and $netmask){
 	    $ack=$ack."$O_SUBNET_MASK\x04$netmask";
 	}
-	elsif($requested_param=~/^.{$i}\x03/ and $def_gw){
+	elsif($requested_param=~/^.{$i}\x03/s and $def_gw){
 	    $ack=$ack."$O_ROUTER$def_gw_len$def_gw";
 	}
-	elsif($requested_param=~/^.{$i}\x0f/ and $domain_name){
+	elsif($requested_param=~/^.{$i}\x0f/s and $domain_name){
 	    $ack=$ack."$O_DOMAIN_NAME$domain_name_len$domain_name";
 	}
-	elsif($requested_param=~/^.{$i}\x06/ and $dns_server){
+	elsif($requested_param=~/^.{$i}\x06/s and $dns_server){
 	    $ack=$ack."$O_DNS_SERVER$dns_server_len$dns_server";
 	}
-	elsif($requested_param=~/^.{$i}\x2c/ and $nbns){
+	elsif($requested_param=~/^.{$i}\x2c/s and $nbns){
 	    $ack=$ack."$O_NETBIOS_NAME_SERVER$nbns_len$nbns$O_NETBIOS_NODE_TYPE\x01$nbnode";
 	}
     }
@@ -1010,20 +1012,20 @@ sub Send_offer
 
     # creating the DHCPOFFER frame:
     my $offer="$BOOTREPLY$HTYPE_ETHER$HLEN_ETHER\x00$xid\x00\x00$flags\x00\x00\x00\x00$p_ipaddress$server_ip$giaddr$p_chaddr$SNAME$FILE$MAGIC_COOKIE$O_DHCP_MSG_TYPE\x01$DHCPOFFER$O_RENEWAL_TIME\x04$t1$O_REBINDING_TIME\x04$t2$O_ADDRESS_TIME\x04$t3$O_DHCP_SERVER_ID\x04$server_ip";
-    for($i=0;$requested_param=~/^.{$i}./;$i++){
-	if($requested_param=~/^.{$i}\x01/ and $netmask){
+    for($i=0;$requested_param=~/^.{$i}./s;$i++){
+	if($requested_param=~/^.{$i}\x01/s and $netmask){
 	    $offer=$offer."$O_SUBNET_MASK\x04$netmask";
 	}
-	elsif($requested_param=~/^.{$i}\x03/ and $def_gw){
+	elsif($requested_param=~/^.{$i}\x03/s and $def_gw){
 	    $offer=$offer."$O_ROUTER$def_gw_len$def_gw";
 	}
-	elsif($requested_param=~/^.{$i}\x0f/ and $domain_name){
+	elsif($requested_param=~/^.{$i}\x0f/s and $domain_name){
 	    $offer=$offer."$O_DOMAIN_NAME$domain_name_len$domain_name";
 	}
-	elsif($requested_param=~/^.{$i}\x06/ and $dns_server){
+	elsif($requested_param=~/^.{$i}\x06/s and $dns_server){
 	    $offer=$offer."$O_DNS_SERVER$dns_server_len$dns_server";
 	}
-	elsif($requested_param=~/^.{$i}\x2c/ and $nbns){
+	elsif($requested_param=~/^.{$i}\x2c/s and $nbns){
 	    $offer=$offer."$O_NETBIOS_NAME_SERVER$nbns_len$nbns$O_NETBIOS_NODE_TYPE\x01$nbnode";
 	}
     }

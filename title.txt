@@ -2,7 +2,7 @@
 *                                                                             *
 *          EEEE  III   CCC  N   N    DDD   H  H   CCC  PPP   DDD              *
 *          E      I   C     NN  N    D  D  H  H  C     P  P  D  D             *
-*          EEE    I   C     N N N    D  D  HHHH  C     PPP   D  D             *
+*          EEE    I   C     N N N    D  D  HHHH  C     PPP   D  D    v1.1     *
 *          E      I   C     N  NN    D  D  H  H  C     P     D  D             *
 *          EEEE  III   CCC  N   N    DDD   H  H   CCC  P     DDD              *
 *                                                                             *

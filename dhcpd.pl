@@ -1,6 +1,6 @@
 #!/perl/bin
 # -----------------------------------------------------------------------------
-# EICNDHCPD v1.0 for NT4 
+# EICNDHCPD v1.1 for NT4 
 # EICNDHCPD Copyright (c)1998 EICN & Nils Reichen <reichen@eicn.ch> 
 # All rights reserved.
 # http://neli00.eicn.etna.ch/~reichen/eicndhcpd.htm
@@ -21,14 +21,15 @@
 # Use under GNU General Public License
 # Details can be found at:http://www.gnu.org/copyleft/gpl.html
 #
-#$Header: dhcpd.pl,v 1.0 1998/6/18
+#$Header: dhcpd.pl,v 1.1 1998/10/7
 # -----------------------------------------------------------------------------
 # v0.9b Created: 19.May.1998   - Created by Nils Reichen <reichen@eicn.ch>
 # v0.901b Revised: 26.May.1998 - Renew bug solved, and optimized code
 # v0.902b Revised: 04.Jun.1998 - EventLog and Service NT
 # v1.0 Revised: 18.Jun.1998 - Fix some little bugs (inet_aton,...)
-$ver      = "v1.0";
-$ver_date = "18.Jun.1998";
+# v1.1 Revised: 07.Oct.1998 - Fix \x0a bug
+$ver      = "v1.1";
+$ver_date = "07.Oct.1998";
 # -----------------------------------------------------------------------------
 
 use Dhcpd;           # Dhcpd module: define some constant for EICN DHCPD
@@ -120,16 +121,16 @@ while(1){
     $paddr_c=recv(SOCK,$frame,1500,0);    # recieve frame from socket
     $recv_time=time;                      # time in seconde from 1/1/1970
     ($port_c,$iaddr_c)=sockaddr_in($paddr_c);
-    ($op)=($frame=~ /^(.)/);              # get the 'op' field
-    ($htype)=($frame=~ /^.(.)/);          # get the 'htype' field
-    ($hlen)=($frame=~ /^..(.)/);          # get the 'hlen' field
-    ($cookie)=($frame=~ /^.{236}(....)/); # get the magic cookie
-    ($bootp)=($frame=~ /^.{240}(.)/);     # get the first option (after cookie)
+    ($op)=($frame=~ /^(.)/s);             # get the 'op' field
+    ($htype)=($frame=~ /^.(.)/s);         # get the 'htype' field
+    ($hlen)=($frame=~ /^..(.)/s);         # get the 'hlen' field
+    ($cookie)=($frame=~ /^.{236}(....)/s);# get the magic cookie
+    ($bootp)=($frame=~ /^.{240}(.)/s);    # get the first option (after cookie)
     next if($op eq "\x02");               # ignore if it is a BOOTREPLY
     next if($cookie ne $MAGIC_COOKIE);    # ignore if it isn't a valid frame
     next if($bootp eq "\xff");            # ignore if it is a BOOTP frame
     # Ignore if network isn't a Ethernet network:
-    if(($hlen ne "\x06")||($htype ne "\x01")){  
+    if(($hlen ne "\x06")||($htype ne "\x01")){
 	($time)=(localtime()=~ /^\S{3}\s(\S+\s+\S+\s\S+)/); # local time
 	unless(open(LOG,">>.\\log\\dhcpd.log")){
 	    &SendEvent(5,EVENTLOG_ERROR_TYPE);
@@ -141,7 +142,7 @@ while(1){
 	next;
     }
     # Send var to the second process (dhcpd2.pl) by the pipe:
-    print WRITE $recv_time,"\n";            
+    print WRITE $recv_time,"\n"; 
     print WRITE $port_c,"\n";
     # convert from char. to hex. form unless problem with "\n":
     # (for example "A" => "41")

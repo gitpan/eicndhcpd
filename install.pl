@@ -1,6 +1,6 @@
 #!/perl/bin
 # ------------------------------------------------------------------------ 
-# EICNDHCPD v1.0 for NT4 
+# EICNDHCPD v1.1 for NT4 
 # EICNDHCPD Copyright (c)1998 EICN & Nils Reichen <reichen@eicn.ch> 
 # All rights reserved.
 # http://neli00.eicn.etna.ch/~reichen/eicndhcpd.htm
@@ -21,14 +21,15 @@
 # Use under GNU General Public License
 # Details can be found at:http://www.gnu.org/copyleft/gpl.html
 #
-#$Header: install.pl,v 1.0 1998/6/18
+#$Header: install.pl,v 1.1 1998/10/7
 # -----------------------------------------------------------------------------
 # v0.9b Created: 19.May.1998   - Created by Nils Reichen <reichen@eicn.ch>
 # v0.901b Revised: 26.May.1998 - Renew bug solved, and optimized code
 # v0.902b Revised: 04.Jun.1998 - EventLog and Service NT
 # v1.0 Revised: 18.Jun.1998 - Fix some little bugs (inet_aton,...)
-$ver      = "v1.0";
-$ver_date = "18.Jun.1998";
+# v1.1 Revised: 07.Oct.1998 - Fix \x0a bug
+$ver      = "v1.1";
+$ver_date = "07.Oct.1998";
 # -----------------------------------------------------------------------------
 
 use Win32::Registry; # Win32::Registry module: to modify the registry
