@@ -1,9 +1,9 @@
 #!/perl/bin
-# -----------------------------------------------------------------------------
-# EICNDHCPD v1.1 for NT4 
-# EICNDHCPD Copyright (c)1998 EICN & Nils Reichen <reichen@eicn.ch> 
+# ------------------------------------------------------------------------ 
+# EICNDHCPD v1.11 for NT4 
+# EICNDHCPD Copyright (c)1998,1999 EICN & Nils Reichen <eicndhcpd@worldcom.ch> 
 # All rights reserved.
-# http://neli00.eicn.etna.ch/~reichen/eicndhcpd.htm
+# http://home.worldcom.ch/nreichen/eicndhcpd.htm
 # DHCPD2.PL part
 # -----------------------------------------------------------------------------
 # EICNDHCPD is a static DHCP server for NT4.
@@ -11,25 +11,26 @@
 # (ethernet addr.) and obtains the same configuration (IP addr., ...) all time.
 # All the host configuration is centralized in a text file (netdata.dat).
 #
-# Made by Nils Reichen <reichen@eicn.ch>
+# Made by Nils Reichen <eicndhcpd@worldcom.ch>
 # EICN, NEUCHATEL SCHOOL OF ENGINEERING
 # Le Locle, Switzerland
 #
 # under Perl 5.004_02 for WinNT4.0
-# (c)1998 Copyright EICN & Nils Reichen <reichen@eicn.ch>
+# (c)1998,1999 Copyright EICN & Nils Reichen <eicndhcpd@worldcom.ch>
 # 
 # Use under GNU General Public License
 # Details can be found at:http://www.gnu.org/copyleft/gpl.html
 #
-#$Header: dhcpd2.pl,v 1.1 1998/10/7
+#$Header: dhcpd2.pl,v 1.11 1999/06/27
 # -----------------------------------------------------------------------------
-# v0.9b Created: 19.May.1998   - Created by Nils Reichen <reichen@eicn.ch>
+# v0.9b Created: 19.May.1998 - Created by Nils Reichen <eicndhcpd@worldcom.ch>
 # v0.901b Revised: 26.May.1998 - Renew bug solved, and optimized code
 # v0.902b Revised: 04.Jun.1998 - EventLog and Service NT
 # v1.0 Revised: 18.Jun.1998 - Fix some little bugs (inet_aton,...)
 # v1.1 Revised: 07.Oct.1998 - Fix \x0a bug
-$ver      = "v1.1";
-$ver_date = "07.Oct.1998";
+# v1.11 Revised: 27.June.1999 - Fix a problem with particular MS DHCP client
+$ver      = "v1.11";
+$ver_date = "27.June.1999";
 # -----------------------------------------------------------------------------
 
 use Dhcpd;           # Dhcpd module: define some constant for EICN DHCPD
@@ -79,9 +80,12 @@ unless(-e "netdata.dat"){
 #     $time         : local time
 #     $frame_ttl    : frame time to live in buffer (pipe) between dhcpd1.pl
 #                     and dhcpd2.pl
+#     $force_netm   : force the server to send subnet mask option (nr. 1)
+#     $focre_router : force the server to send router option (nr. 3)
 #
 my ($debug,$hard_debug,$mail_mac,$mail_log,$log2bak,$log_size,$smtp_server,
-    $admin_mail,$server_ip,$b_ipaddr,$time,$frame_ttl);
+    $admin_mail,$server_ip,$b_ipaddr,$time,$frame_ttl,$force_netm,
+    $force_router);
 
 # Open dhcpd.conf:
 unless(open(CONF,"<dhcpd.conf")){
@@ -126,6 +130,12 @@ while(<CONF>){
     elsif($_=~/^FRAME\sTTL\s/){
 	($frame_ttl)=($_=~/^.{10}(\d)/);
     }
+    elsif($_=~/^FORCE\sNETMASK\s/){
+	($force_netm)=($_=~/^.{14}(\d)/);
+    }
+    elsif($_=~/^FORCE\sROUTER\s/){
+	($force_router)=($_=~/^.{13}(\d)/);
+    }
 }
 close(CONF);
 # set minimum size for dhcpd.log to 10000 bytes:
@@ -151,7 +161,7 @@ if(($mail_log or $mail_mac)and(($smtp_server eq "")or($admin_mail eq "")or(!($ad
 
 # stop dhcpd if the server IP address is invalid:
 if(($server_ip eq "")||(inet_ntoa($server_ip)=~/255/)||
-   (inet_ntoa($server_ip)=~/\.0/))
+   (inet_ntoa($server_ip)=~/\.0$/))
 {
     ($time)=(localtime()=~ /^\S{3}\s(\S+\s+\S+\s\S+)/); # local time
     unless(open(LOG,">>.\\log\\dhcpd.log")){
@@ -254,6 +264,10 @@ close(READ2);
 #    $requested_param : parameter request list
 #    $vendor_spec     : vendor specific information
 #    $dhcp_message    : message (in NAK and DECLINE frames)
+#    $f_netm          : force server to send netmask option
+#                       reinit with $force_netm for each frame
+#    $f_router        : force server to send router option
+#                       reinit with $force_router for each frame
 #
 my($paddr_c,$frame,$recv_time,$now,$port_c,$iaddr_c);
 my $proto=getprotobyname("udp"); # select the transfert protocol
@@ -274,9 +288,12 @@ $|=1;              # unbufferise LOG
 select(STDOUT);    # select def. output handle 
 
 # Infinite loop for getting frame from the pipe and answer:
+FRAME_IN:
 while(1){
     $nr_frame++;
-    print "Waiting a frame....\n";
+    $f_netm=$force_netm;     # reinit force netmask option for this frame
+    $f_router=$force_router; # renint force router option for this frame
+
     $recv_time=<STDIN>; # get time when dhcpd1.pl recieved the frame
     chop($recv_time);   # remove last character ("\n")
     $now=time();        # time in seconde from 1/1/1970
@@ -291,6 +308,7 @@ while(1){
     $port_c=<STDIN>;    # get the (UDP) source port (client port)
     $iaddr_c=<STDIN>;   # get the (IP) source address 
     $frame=<STDIN>;     # get the frame
+    
     # remove "\n" and convert from hex. to character (f.e. "41"=>"A"):
     chop($port_c); chop($iaddr_c); $iaddr_c=pack("H8",$iaddr_c);
     chop($frame); $frame=pack("H*",$frame);
@@ -314,12 +332,12 @@ while(1){
 	    }
 	}
     }
-    
-    # Analyse the frame:
+
+    # Analysis the frame:
     # clear this variables:
     ($msg_type,$p_requested_ip,$requested_ip,$server_id,$client_hostname,
      $requested_param,$vendor_spec,$dhcp_message,$option)="" x 9;
-    
+
     # 'op','htype','hlen' and magic cookie: allready tested in dhcpd.pl
     # 'hops','secs','yiaddr' and 'siaddr' ignored: don't needed
     my ($hlen)=($frame=~ /^..(.)/s);         # 'hlen' field, need for $chaddr
@@ -338,9 +356,20 @@ while(1){
                 $chaddr_c=~ /^.{10}(..)/s;       
     
     $i=240;    # set postion at the begining of 'option' field
-    
+
     while($option ne "\xff")
     { 
+	if($i>1496){
+            # if there is a problem with DHCP frame structure,
+	    # ignore this frame and wait next frame. (1496 -> MTU)
+	    ($time)=(localtime()=~ /^\S{3}\s(\S+\s+\S+\s\S+)/); # local time
+	    print LOG "\n$time ERROR IN A RECIEVED DHCP FRAME:\n";
+	    print LOG "       INVALID STRUCTURE, frame ignored !\n";
+	    print LOG "       Frame from $chaddr_txt !!!\n";
+	    print LOG "       You should check this client !\n\n";
+	    goto FRAME_IN;
+	}
+
 	($option)=($frame=~ /^.{$i}(.)/s);    # option number
 	$i++;
 	next if($option eq "\x00");           # next if it's a 'pad' option
@@ -412,7 +441,6 @@ while(1){
     print DEBUG "$chaddr_txt is a Windows95(TM) station\n"
           if($hard_debug &&($vendor_spec eq "\x37\x02\x00\x00"));
     
-
 # Send answer:
     if($msg_type==3){   # it's a DHCPREQUEST
 	if($debug){     # print debug level 1 informations
@@ -512,11 +540,11 @@ sub R_discover
 		$| = 1;            # unbufferise STDIN => unbufferise READ 
 		select(STDOUT);    # select the default output handle
 	      Win32::Process::Create($Mailprocess,
-			 "c:\\perl\\bin\\perl.exe",
-			 "c:\\perl\\bin\\perl.exe c:\\dhcpd\\dhcpdmail.pl",
+			 "e:\\perl\\bin\\perl.exe",
+			 "e:\\perl\\bin\\perl.exe e:\\eicndhcpd\\dhcpdmail.pl",
 			 1,
 			 NORMAL_PRIORITY_CLASS,
-			 "c:\\dhcpd");
+			 "e:\\eicndhcpd");
 		open(STDIN, "< &SAVEIN"); # restore STDIN
 		close(SAVEIN);
 		print WRITE "$admin_mail\n";
@@ -562,11 +590,11 @@ sub R_request
 			$| = 1; # unbufferise STDIN => unbufferise READ 
 			select(STDOUT);    # select the default output handle
 		      Win32::Process::Create($Mailprocess,
-			    "c:\\perl\\bin\\perl.exe",
-			    "c:\\perl\\bin\\perl.exe c:\\dhcpd\\dhcpdmail.pl",
+			    "e:\\perl\\bin\\perl.exe",
+			    "e:\\perl\\bin\\perl.exe e:\\eicndhcpd\\dhcpdmail.pl",
 			    1,
 			    NORMAL_PRIORITY_CLASS,
-			    "c:\\dhcpd");
+			    "e:\\eicndhcpd");
 			open(STDIN, "< &SAVEIN"); # restore STDIN
 			close(SAVEIN);
 			print WRITE "$admin_mail\n";
@@ -602,11 +630,11 @@ sub R_request
 		    $| = 1;            # unbufferise STDIN => unbufferise READ 
 		    select(STDOUT);    # select the default output handle
 		  Win32::Process::Create($Mailprocess,
-			 "c:\\perl\\bin\\perl.exe",
-			 "c:\\perl\\bin\\perl.exe c:\\dhcpd\\dhcpdmail.pl",
+			 "e:\\perl\\bin\\perl.exe",
+			 "e:\\perl\\bin\\perl.exe e:\\eicndhcpd\\dhcpdmail.pl",
 			 1,
 			 NORMAL_PRIORITY_CLASS,
-			 "c:\\dhcpd");
+			 "e:\\eicndhcpd");
 		    open(STDIN, "< &SAVEIN");
 		    close(SAVEIN);
 		    print WRITE "$admin_mail\n";
@@ -644,11 +672,11 @@ sub R_decline
 	$| = 1;            # unbufferise STDIN => unbufferise READ 
 	select(STDOUT);    # select the default output handle
       Win32::Process::Create($Mailprocess,
-			     "c:\\perl\\bin\\perl.exe",
-			     "c:\\perl\\bin\\perl.exe c:\\dhcpd\\dhcpdmail.pl",
+			     "e:\\perl\\bin\\perl.exe",
+			     "e:\\perl\\bin\\perl.exe e:\\eicndhcpd\\dhcpdmail.pl",
 			     1,
 			     NORMAL_PRIORITY_CLASS,
-			     "c:\\dhcpd");
+			     "e:\\eicndhcpd");
 	open(STDIN, "< &SAVEIN"); # restore STDIN
 	close(SAVEIN);
 	print WRITE "$admin_mail\n";
@@ -680,10 +708,14 @@ sub R_inform
 	# creating the DHCPACK frame:
 	my $ack="$BOOTREPLY$HTYPE_ETHER$HLEN_ETHER\x00$xid\x00\x00$flags\x00\x00\x00\x00\x00\x00\x00\x00$server_ip$giaddr$p_chaddr$SNAME$FILE$MAGIC_COOKIE$O_DHCP_MSG_TYPE\x01$DHCPACK$O_DHCP_SERVER_ID\x04$server_ip";
 	for($i=0;$requested_param=~/^.{$i}./s;$i++){
-	    if($requested_param=~/^.{$i}\x01/s and $netmask){
+	    if(($requested_param=~/^.{$i}\x01/s or $f_netm) and $netmask)
+	    {
+		$f_netm=0;
 		$ack=$ack."$O_SUBNET_MASK\x04$netmask";
 	    }
-	    elsif($requested_param=~/^.{$i}\x03/s and $def_gw){
+	    elsif(($requested_param=~/^.{$i}\x03/s or $f_router) and $def_gw)
+            {
+		$f_router=0;
 		$ack=$ack."$O_ROUTER$def_gw_len$def_gw";
 	    }
 	    elsif($requested_param=~/^.{$i}\x0f/s and $domain_name){
@@ -774,11 +806,11 @@ sub Mac
 	$| = 1;            # unbufferise STDIN => unbufferise READ 
 	select(STDOUT);    # select the default output handle
       Win32::Process::Create($Mailprocess,
-			     "c:\\perl\\bin\\perl.exe",
-			     "c:\\perl\\bin\\perl.exe c:\\dhcpd\\dhcpdmail.pl",
+			     "e:\\perl\\bin\\perl.exe",
+			     "e:\\perl\\bin\\perl.exe e:\\eicndhcpd\\dhcpdmail.pl",
 			     1,
 			     NORMAL_PRIORITY_CLASS,
-			     "c:\\dhcpd");
+			     "e:\\eicndhcpd");
 	open(STDIN, "< &SAVEIN");
 	close(SAVEIN);
 	print WRITE "$admin_mail\n";
@@ -951,10 +983,14 @@ sub Send_ack
     # creating the DHCPACK frame:
     my $ack="$BOOTREPLY$HTYPE_ETHER$HLEN_ETHER\x00$xid\x00\x00$flags\x00\x00\x00\x00$p_requested_ip$server_ip$giaddr$p_chaddr$SNAME$FILE$MAGIC_COOKIE$O_DHCP_MSG_TYPE\x01$DHCPACK$O_RENEWAL_TIME\x04$t1$O_REBINDING_TIME\x04$t2$O_ADDRESS_TIME\x04$t3$O_DHCP_SERVER_ID\x04$server_ip";
     for($i=0;$requested_param=~/^.{$i}./s;$i++){
-	if($requested_param=~/^.{$i}\x01/s and $netmask){
+	if(($requested_param=~/^.{$i}\x01/s or $f_netm) and $netmask)
+	{
+	    $f_netm=0;
 	    $ack=$ack."$O_SUBNET_MASK\x04$netmask";
 	}
-	elsif($requested_param=~/^.{$i}\x03/s and $def_gw){
+	elsif(($requested_param=~/^.{$i}\x03/s or $f_router) and $def_gw)
+	{
+	    $f_router=0;
 	    $ack=$ack."$O_ROUTER$def_gw_len$def_gw";
 	}
 	elsif($requested_param=~/^.{$i}\x0f/s and $domain_name){
@@ -1013,10 +1049,14 @@ sub Send_offer
     # creating the DHCPOFFER frame:
     my $offer="$BOOTREPLY$HTYPE_ETHER$HLEN_ETHER\x00$xid\x00\x00$flags\x00\x00\x00\x00$p_ipaddress$server_ip$giaddr$p_chaddr$SNAME$FILE$MAGIC_COOKIE$O_DHCP_MSG_TYPE\x01$DHCPOFFER$O_RENEWAL_TIME\x04$t1$O_REBINDING_TIME\x04$t2$O_ADDRESS_TIME\x04$t3$O_DHCP_SERVER_ID\x04$server_ip";
     for($i=0;$requested_param=~/^.{$i}./s;$i++){
-	if($requested_param=~/^.{$i}\x01/s and $netmask){
+	if(($requested_param=~/^.{$i}\x01/s or $f_netm) and $netmask)
+	{
+	    $f_netm=0;
 	    $offer=$offer."$O_SUBNET_MASK\x04$netmask";
 	}
-	elsif($requested_param=~/^.{$i}\x03/s and $def_gw){
+	elsif(($requested_param=~/^.{$i}\x03/s or $f_router) and $def_gw)
+	{
+	    $f_router=0;
 	    $offer=$offer."$O_ROUTER$def_gw_len$def_gw";
 	}
 	elsif($requested_param=~/^.{$i}\x0f/s and $domain_name){
@@ -1195,11 +1235,11 @@ sub Log_backup
 	    $| = 1;            # unbufferise STDIN => unbufferise READ 
 	    select(STDOUT);    # select the default output handle
 	  Win32::Process::Create($Mailprocess,
-			    "c:\\perl\\bin\\perl.exe",
-			    "c:\\perl\\bin\\perl.exe c:\\dhcpd\\dhcpdmail.pl",
+			    "e:\\perl\\bin\\perl.exe",
+			    "e:\\perl\\bin\\perl.exe e:\\eicndhcpd\\dhcpdmail.pl",
 			    1,
 			    NORMAL_PRIORITY_CLASS,
-			    "c:\\dhcpd");
+			    "e:\\eicndhcpd");
 	    open(STDIN, "< &SAVEIN"); # restore STDIN
 	    close(SAVEIN);
 	    print WRITE "$admin_mail\n";

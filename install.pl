@@ -1,35 +1,36 @@
 #!/perl/bin
 # ------------------------------------------------------------------------ 
-# EICNDHCPD v1.1 for NT4 
-# EICNDHCPD Copyright (c)1998 EICN & Nils Reichen <reichen@eicn.ch> 
+# EICNDHCPD v1.11 for NT4 
+# EICNDHCPD Copyright (c)1998,1999 EICN & Nils Reichen <eicndhcpd@worldcom.ch> 
 # All rights reserved.
-# http://neli00.eicn.etna.ch/~reichen/eicndhcpd.htm
+# http://home.worldcom.ch/nreichen/eicndhcpd.html
 # INSTALL.PL part
-# ------------------------------------------------------------------------ 
-# EICNDHCPD is  static DHCP server for NT4.
+# -----------------------------------------------------------------------------
+# EICNDHCPD is a static DHCP server for NT4.
 # "static" because each computer is identified by his MAC address
 # (ethernet addr.) and obtains the same configuration (IP addr., ...) all time.
 # All the host configuration is centralized in a text file (netdata.dat).
 #
-# Made by Nils Reichen <reichen@eicn.ch>
+# Made by Nils Reichen <eicndhcpd@worldcom.ch>
 # EICN, NEUCHATEL SCHOOL OF ENGINEERING
 # Le Locle, Switzerland
 #
 # under Perl 5.004_02 for WinNT4.0
-# (c)1998 Copyright EICN & Nils Reichen <reichen@eicn.ch>
+# (c)1998,1999 Copyright EICN & Nils Reichen <eicndhcpd@worldcom.ch>
 # 
 # Use under GNU General Public License
 # Details can be found at:http://www.gnu.org/copyleft/gpl.html
 #
-#$Header: install.pl,v 1.1 1998/10/7
+#$Header: install.pl,v 1.11 1999/06/27
 # -----------------------------------------------------------------------------
-# v0.9b Created: 19.May.1998   - Created by Nils Reichen <reichen@eicn.ch>
+# v0.9b Created: 19.May.1998 - Created by Nils Reichen <eicndhcpd@worldcom.ch>
 # v0.901b Revised: 26.May.1998 - Renew bug solved, and optimized code
 # v0.902b Revised: 04.Jun.1998 - EventLog and Service NT
 # v1.0 Revised: 18.Jun.1998 - Fix some little bugs (inet_aton,...)
 # v1.1 Revised: 07.Oct.1998 - Fix \x0a bug
-$ver      = "v1.1";
-$ver_date = "07.Oct.1998";
+# v1.11 Revised: 27.June.1999 - Fix a problem with particular MS DHCP client
+$ver      = "v1.11";
+$ver_date = "27.June.1999";
 # -----------------------------------------------------------------------------
 
 use Win32::Registry; # Win32::Registry module: to modify the registry
@@ -100,27 +101,34 @@ if($status{CurrentState}==4){
 #
 # path of perl.exe
 #
-print "Please enter the path of perl.exe \[c:\\perl\\bin\] : ";
-$_=<STDIN>;
-unless($_ eq "\n")
+PERL_PATH:
 {
-    $perl_path=$_;
-    chomp($perl_path);
+    print "Please enter the path of perl.exe \[c:\\perl\\bin\] : ";
+    $_=<STDIN>;
+    if($_ eq "exit\n"){
+	goto END;
+    }
+    unless($_ eq "\n")
+    {
+	$perl_path=$_;
+	chomp($perl_path);
+    }
+    
+    $dhcpd_path=~ s#/#\\#g; # replace all / by \
+    
+    # remove the last \ if exist:
+    ($perl_path)=($perl_path=~ /(.+)\\$/) if($perl_path=~ /.+\\$/);
+    
+    # add \perl.exe at the end if it don't exist:
+    $perl_path= $perl_path . "\\perl.exe" unless($perl_path=~ /.+perl.exe$/);
+    unless(-e $perl_path)
+    {
+	print "\n\n\n\nUNABLE TO FIND PERL.EXE FILE !\n";
+	print "\nINVALID PATH FOR PERL.EXE, TRY AGAIN!\n\n";
+	print "(Enter \"exit\" form perl path to quit install.pl)\n\n";
+	goto PERL_PATH;
+    }
 }
-
-$dhcpd_path=~ s#/#\\#g; # replace all / by \
-
-# remove the last \ if exist:
-($perl_path)=($perl_path=~ /(.+)\\$/) if($perl_path=~ /.+\\$/);
-
-# add \perl.exe at the end if it don't exist:
-$perl_path= $perl_path . "\\perl.exe" unless($perl_path=~ /.+perl.exe$/);
-unless(-e $perl_path)
-{
-    print "\n\n\n\nINVALID PATH FOR PERL.EXE, TRY AGAIN!\n\n\n\n";
-    goto END;
-}
-
 ###############################################################################
 #
 # path where to install EICN DHCPD
@@ -227,7 +235,8 @@ if($output=~ /The service was successfuly added!/){
 }
 elsif($output=~ /This service has already been started!/){
     print "\n",$output,"\n";
-    print "Do you want to remove old EICNDHCPD service (y/n) \[y\]? : ";
+    print "Do you want to remove old EICNDHCPD service \n";
+    print "and replace with this installation (y/n) \[y\]? : ";
     $_=<STDIN>;
     $_="y\n" if($_ eq "\n"); # by default
     if(($_ eq "y\n")||($_ eq "Y\n")) 

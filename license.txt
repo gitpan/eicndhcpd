@@ -1,9 +1,9 @@
 EICNDHCPD : Static DHCP server
-version 1.1
-Copyright (C) 1998 EICN & Nils Reichen
-EICN, Le Locle, Switzerland
-Nils Reichen <reichen@eicn.ch>
-http://neli00.eicn.etna.ch/~reichen/eicndhcpd.htm
+version 1.11
+Copyright (C) 1998,1999 EICN & Nils Reichen
+EICN, Le Locle, Switzerland (http://www.eicn.ch)
+Nils Reichen <eicndhcpd@worldcom.ch> 
+http://home.worldcom.ch/nreichen/eicndhcpd.html
 
 See gpl.txt for GNU General Public License.
 
@@ -20,3 +20,4 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+Or go to http://www.gnu.org/copyleft/gpl.html
